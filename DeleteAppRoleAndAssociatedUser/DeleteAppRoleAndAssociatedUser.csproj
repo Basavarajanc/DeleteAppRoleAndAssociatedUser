@@ -7,8 +7,8 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="EPPlus" Version="5.7.4"/>
-        <PackageReference Include="Microsoft.Graph" Version="4.54.0"/>
-        <PackageReference Include="Microsoft.Identity.Client" Version="4.49.1"/>
+        <PackageReference Include="EPPlus" Version="5.7.4" />
+        <PackageReference Include="Microsoft.Graph" Version="4.54.0" />
+        <PackageReference Include="Microsoft.Identity.Client" Version="4.49.1" />
     </ItemGroup>
 </Project>

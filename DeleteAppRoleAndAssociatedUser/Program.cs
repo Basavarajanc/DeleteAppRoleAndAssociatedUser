@@ -1,6 +1,7 @@
 ﻿using System.Net.Http.Headers;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
+using OfficeOpenXml;
 using AuthenticationException = System.Security.Authentication.AuthenticationException;
 
 namespace ListAndDeleteAppRoles
@@ -9,15 +10,41 @@ namespace ListAndDeleteAppRoles
     {
         private static GraphServiceClient? _graphClient;
         private static string? _accessToken;
-        private static readonly string? ClientId = "bed8937e-3fa9-4d37-8bfb-aa0fca76c907";
-        private static readonly string? Tenant = "fa74eeb7-373a-4c5b-8c97-4d330cfa9f60";
-        private static readonly string? ClientSecret = "3br8Q~UBMbzFpd7xy0ZnN49zkZkiI7_s7YPAZcXK";
-        private static readonly string? ObjectId = "4adb256d-90a6-492c-bcfb-746a1dacbf18";
-        private static readonly string? AzureServicePrinciple = "8f2b53ec-192f-48bb-8b8e-330e4ecd4ee0";
+        private static readonly string? ClientId = "<>";
+        private static readonly string? Tenant = "<>";
+        private static readonly string? ClientSecret = "<>";
+        private static readonly string? ObjectId = "<>";
+        private static readonly string? AzureServicePrinciple = "<>";
+        private static string? SearchString = "TestBasav";
 
         private static async Task Main()
         {
-            await HandleRemoveAzureAppRole();
+            /*//List the users with Empty Assigned roles
+          var result =  await ListUsersAssignedToRole();
+          var countAppRoles = 0;
+          
+          var appUsersData = new List<AppUserData>();
+          AppUserData appUserData;
+          
+          foreach (var appRole in result)
+          {
+              countAppRoles++;
+              appUserData = new AppUserData();
+              appUserData.roleNo = countAppRoles.ToString();
+             //appUserData.resourceDisplayName = appRole.ResourceDisplayName;
+              //appUserData.principleDisplayName = appRole.PrincipalDisplayName;
+              //appUserData.appRoleId = appRole.AppRoleId.ToString();
+              //appUserData.resourceId = appRole.ResourceId.ToString();
+             // appUserData.deleteDateTime = appRole.DeletedDateTime.ToString();
+              
+              appUsersData.Add(appUserData);
+
+          }
+
+          ExportToExcel(appUsersData);*/
+
+          //Delete the Users
+          await HandleRemoveAzureAppRole();
         }
 
         private static async Task<string> GetAccessToken()
@@ -66,21 +93,23 @@ namespace ListAndDeleteAppRoles
         {
             var app = await GetAzureApp();
             var appRoles = app.AppRoles.ToList();
-
-            Guid guid = Guid.NewGuid();
-            
-            var isDisabledAppRole = await DisableAppRole(guid);
-
-            if (isDisabledAppRole)
+            foreach (var appRole in appRoles)
             {
-                var removedAppRole = await RemoveAppRoleFromUsers(guid);
-                
-                if (removedAppRole)
+                if ((bool)appRole?.Description.Contains(SearchString))
                 {
-                    await DeleteAppRole(guid);
+                    var isDisabledAppRole = await DisableAppRole(appRole.Id.Value);
+      
+                    if (isDisabledAppRole)
+                    {
+                        var removedAppRole = await RemoveAppRoleFromUsers(appRole.Id.Value);
+                
+                        if (removedAppRole)
+                        {
+                            await DeleteAppRole(appRole.Id.Value);
+                        }
+                    }
                 }
             }
-
             return false;
         }
 
@@ -140,11 +169,20 @@ namespace ListAndDeleteAppRoles
 
         private static async Task<bool> RemoveAppRoleFromUsers(Guid id)
         {
-            var usersAssignedToRole = await GetUsersAssignedToRole(id);
-            foreach (var userAssignment in usersAssignedToRole)
-                await _graphClient?.ServicePrincipals[AzureServicePrinciple].AppRoleAssignedTo[userAssignment.Id]
-                    .Request()
-                    .DeleteAsync();
+            try
+            {
+                var usersAssignedToRole = await GetUsersAssignedToRole(id);
+                foreach (var userAssignment in usersAssignedToRole)
+                    await _graphClient?.ServicePrincipals[AzureServicePrinciple].AppRoleAssignedTo[userAssignment.Id]
+                        .Request()
+                        .DeleteAsync();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
+           
             return true;
         }
 
@@ -163,24 +201,108 @@ namespace ListAndDeleteAppRoles
                 assignments = await assignments.NextPageRequest.GetAsync();
                 appRoleAssignments.AddRange(assignments.CurrentPage);
             }
-
+            
             var result = appRoleAssignments.Where(x => x.AppRoleId == id).ToList();
             return result;
         }
+        
+        public static async Task<List<User>> ListUsersAssignedToRole()
+        {
+            var app = await GetAzureApp();
+            var usersWithoutAppRoleAssignments = new List<User>();
+            try
+            {
+                var appRoleAssignments = new List<AppRoleAssignment>();
+                var usersList = new List<User>();
+
+                var assignments = await _graphClient.ServicePrincipals[AzureServicePrinciple].AppRoleAssignedTo
+                    .Request()
+                    .Top(998)
+                    .GetAsync();
+                
+                appRoleAssignments.AddRange(assignments.CurrentPage);
+                while (assignments.NextPageRequest != null)
+                {
+                    assignments = await assignments.NextPageRequest.GetAsync();
+                    appRoleAssignments.AddRange(assignments.CurrentPage);
+                }
+
+                // Get users assigned to the app
+                List<User> assignedUsers = new List<User>();
+                foreach (var assignment in appRoleAssignments)
+                {
+                    if (assignment.PrincipalType == "User")
+                    {
+                        var user = await _graphClient.Users[assignment.PrincipalId.ToString()]
+                            .Request()
+                            .GetAsync();
+
+                        assignedUsers.Add(user);
+                    }
+                }
+               
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+            return usersWithoutAppRoleAssignments;
+        }
+        
+        private static async Task ExportToExcel(List<AppUserData> data)
+        {
+            try
+            {
+                ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+                using (var package = new ExcelPackage())
+                {
+                    // Add a worksheet
+                    var worksheet = package.Workbook.Worksheets.Add("Sheet1");
+
+                    // Add headers
+                    worksheet.Cells["A1"].Value = "RoleNo";
+                    worksheet.Cells["B1"].Value = "resourceDisplayName";
+                    worksheet.Cells["C1"].Value = "principleDisplayName";
+                    worksheet.Cells["D1"].Value = "appRoleId";
+                    worksheet.Cells["E1"].Value = "deleteDateTime";
+                    //worksheet.Cells["F1"].Value = "resourceId";
+
+                    // Add data
+                    for (var i = 0; i < data.Count; i++)
+                    {
+                        worksheet.Cells[i + 2, 1].Value = data[i].roleNo;
+                        worksheet.Cells[i + 2, 2].Value = data[i].resourceDisplayName;
+                        worksheet.Cells[i + 2, 3].Value = data[i].principleDisplayName;
+                        worksheet.Cells[i + 2, 4].Value = data[i].appRoleId;
+                        worksheet.Cells[i + 2, 5].Value = data[i].deleteDateTime;
+                       // worksheet.Cells[i + 2, 6].Value = data[i].resourceId;
+                    }
+
+                    // Save the file
+                    var fileInfo = new FileInfo("output.xlsx");
+                    package.SaveAs(fileInfo);
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
     }
 
-    public class AppRolesData
+    public class AppUserData
     {
         public string roleNo { get; set; }
 
-        public string displayName { get; set; }
+        public string resourceDisplayName { get; set; }
 
-        public string description { get; set; }
+        public string principleDisplayName { get; set; }
 
-        public string isEnabled { get; set; }
+        public string appRoleId { get; set; }
 
-        public string value { get; set; }
+        public string deleteDateTime { get; set; }
 
-        public string usersAssignedToRole { get; set; }
+        public string resourceId { get; set; }
+        
+        public string userRoleAssignedTo { get; set; }
     }
 }
